@@ -1,0 +1,1039 @@
+---
+alwaysApply: true
+---
+# LangChain & LangGraph v1.0 Development Guidelines
+
+**You will deliver the best, most up-to-date LangChain v1.0 code.** 
+
+This rule ensures all LangChain and LangGraph code is built using the **latest v1.0 documentation** and best practices. The user can trust that you're using current patterns, not deprecated approaches.
+
+## Pre-Development Documentation Check
+
+**MANDATORY**: **ALWAYS** search the web for current documentation **BEFORE** writing any LangChain or LangGraph code.
+
+### Why This Matters:
+- LangChain v1.0 introduced **major breaking changes** from v0.x
+- Outdated patterns (like `create_react_agent`, LCEL chains, etc.) **will not work**
+- The user deserves **current, working code**, not deprecated examples
+
+### Required Steps:
+
+1. **Search for Latest Documentation (MANDATORY):**
+   - **ALWAYS** use `@Web` and `@https://docs.langchain.com/oss/python/langchain` to search for current documentation
+   - Primary source: https://docs.langchain.com/oss/python/langchain
+   - Search query format: `"LangChain v1.0 [specific feature] site:docs.langchain.com"`
+   - Examples:
+     - `"LangChain v1.0 create_agent site:docs.langchain.com"`
+     - `"LangGraph v1.0 StateGraph workflow site:docs.langchain.com"`
+     - `"LangChain v1.0 vector stores site:docs.langchain.com"`
+
+2. **Verify Breaking Changes:**
+   - Check for v0.x to v1.0 migration notes
+   - Identify deprecated APIs or patterns (create_react_agent, LCEL, etc.)
+   - Look for new recommended approaches
+
+3. **Challenge Your Assumptions:**
+   - If you think you know the API, **search anyway**
+   - APIs change frequently - don't rely on training data
+   - When in doubt, search it out!
+
+4. **Document Your Research:**
+   - Add a comment block at the top of new files:
+     ```python
+     """
+     LangChain Version: v1.0+
+     Documentation Reference: [URL from web search]
+     Last Verified: [DATE]
+     """
+     ```
+
+## LangChain v1.0 Best Practices
+
+### Imports and Versions
+```python
+# Always use explicit version checking when critical
+from langchain import __version__
+# Target: v1.0+
+# Documentation checked: [DATE]
+# Reference: [URL]
+```
+
+### Core Architecture Changes in v1.0
+**IMPORTANT:** LangChain Expression Language (LCEL) has been **deprecated and removed** in v1.0.
+
+### Simplicity First: Use Built-in Helper Functions
+**KEY PRINCIPLE:** Start simple, only go complex when needed. The user deserves clean, maintainable code.
+
+LangChain v1.0 provides **high-level helper functions** for common tasks:
+- **ALWAYS PREFER**: `create_agent()` for standard agents (from `langchain.agents`)
+- **ALWAYS PREFER**: Built-in functions like `init_chat_model()` 
+- **ALWAYS PREFER**: Simple, direct APIs over manual graph construction
+- **KEEP IT SIMPLE**: Avoid unnecessary wrapper functions or abstractions
+
+**Only use manual LangGraph StateGraph when you need:**
+- Custom nodes or workflow logic beyond standard agent patterns
+- Multi-agent coordination with complex custom routing (most multi-agent uses supervisor pattern instead)
+- Human-in-the-loop patterns
+- Complex routing, cycles, or branching logic
+- Custom state transformations
+
+**DO NOT use manual LangGraph for:**
+- **WRONG**: Simple single agents (use `create_agent()` instead)
+- **WRONG**: Basic tool-calling workflows (use `create_agent()` instead)
+- **WRONG**: Straightforward Q&A bots (use `create_agent()` instead)
+- **WRONG**: Basic multi-agent systems (use supervisor pattern with `create_agent()` instead)
+
+### Simple Agent Creation (ALWAYS START HERE)
+
+**This is the v1.0 standard.** Use this pattern for 90% of agent needs:
+
+```python
+from langchain.agents import create_agent
+from langchain_core.tools import tool
+
+@tool
+def my_tool(query: str) -> str:
+    """My tool description."""
+    return "result"
+
+# That's it! Just 4 lines for a fully working agent.
+agent = create_agent(
+    model="openai:gpt-4o-mini",  # Simple string format
+    tools=[my_tool],
+    system_prompt="You are a helpful assistant.",
+    name="my_agent"  # ALWAYS provide a descriptive name
+)
+
+# Use it:
+result = agent.invoke({"messages": [{"role": "user", "content": "Hello"}]})
+```
+
+**Key Benefits:**
+- Simple and readable
+- Built on LangGraph under the hood (gets all the benefits)
+- Handles tool calling, state management, and message history automatically
+- Production-ready out of the box
+
+**IMPORTANT - Agent Naming:**
+- **ALWAYS** provide a `name` parameter when calling `create_agent()`
+- Use descriptive, snake_case names (e.g., "weather_agent", "research_assistant", "customer_support_bot")
+- Names help with debugging, tracing in LangSmith, and identifying agents in logs
+- Names are especially critical in multi-agent systems for tracking which agent performed which action
+
+### Advanced: Manual LangGraph (Only When Necessary)
+When you need custom workflow control:
+```python
+from langgraph.graph import StateGraph
+from typing import TypedDict
+
+class State(TypedDict):
+    input: str
+    output: str
+
+workflow = StateGraph(State)
+workflow.add_node("process", process_function)
+workflow.set_entry_point("process")
+app = workflow.compile()
+```
+
+### Standardized Model Interface
+- LangChain v1.0 introduces a unified model interface
+- Consistent API across different LLM providers
+- Use `.invoke()`, `.batch()`, `.stream()` methods consistently
+- Leverage async methods when available (`.ainvoke()`, `.abatch()`)
+
+### Document Loading and Text Splitting
+- **Document Loaders:**
+  - Use appropriate loader: `PyPDFLoader`, `TextLoader`, `UnstructuredMarkdownLoader`
+  - Each loader returns `Document` objects with `.page_content` and `.metadata`
+- **Text Splitting:**
+  - Use `RecursiveCharacterTextSplitter` for most cases
+  - Typical configuration: `chunk_size=1000, chunk_overlap=200`
+  - Splits at natural boundaries (paragraphs, sentences) when possible
+  - Balance: Too small (<500) loses context, too large (>2000) less precise
+  
+### Vector Stores and Retrievers
+- Use the latest vectorstore implementations (e.g., ChromaDB with persistent storage)
+- **Embeddings:** Use `OpenAIEmbeddings(model="text-embedding-3-small")` for cost-effective quality
+- **Storage:** Always use `persist_directory` for ChromaDB to save locally
+- **Querying:** Implement proper metadata filtering
+- Use `.as_retriever()` method for integration with workflows
+- Common retrieval strategies:
+  - Basic similarity search: `vectorstore.similarity_search(query, k=3)`
+  - MMR for diversity: `search_type="mmr"` with `lambda_mult`
+  - Score thresholding: `search_type="similarity_score_threshold"`
+- **Score interpretation:** Lower scores = more similar (< 0.5 excellent, 0.5-1.0 good, > 1.5 questionable)
+- **RAG Patterns:**
+  - **2-Step RAG**: Fixed retrieve-then-generate (use tool that always searches)
+  - **Agentic RAG**: Agent decides when to retrieve (give autonomy in system prompt)
+
+### Memory and Chat History
+- **Use checkpointers for persistence:**
+  - Development: `InMemorySaver()` from `langgraph.checkpoint.memory`
+  - Production: Database-backed checkpointers (PostgreSQL, Redis)
+- Each conversation needs unique `thread_id` in config
+- Implement memory as part of LangGraph state
+- Avoid legacy memory abstractions like `ConversationBufferMemory`
+- Custom state: Extend `AgentState` to add custom fields
+
+### Agents and Tools
+- **PREFER**: Use `create_agent()` from `langchain.agents` for standard agents
+- Define tools using the `@tool` decorator
+- Implement proper error handling and fallbacks
+- Use structured output parsing with Pydantic models
+- Only use manual LangGraph StateGraph for complex custom workflows
+
+### LangSmith Integration (Strongly Recommended)
+- **Enable tracing for development and debugging:**
+  ```bash
+  export LANGSMITH_TRACING=true
+  export LANGSMITH_API_KEY=<your-key>
+  export LANGSMITH_PROJECT=<project-name>
+  ```
+- Provides automatic tracing of all LangChain operations
+- Essential for debugging agents, monitoring token usage, and understanding execution flow
+- View traces at https://smith.langchain.com/
+- **Benefits:**
+  - Visualize every step of agent execution
+  - Track tool calls and LLM responses
+  - Monitor latency and token costs
+  - Debug multi-agent systems
+- No code changes needed - just environment variables
+
+### Multi-Agent Systems
+**Documentation:** https://docs.langchain.com/oss/python/langchain/multi-agent
+
+LangChain supports **two core multi-agent patterns**:
+
+#### 1. Tool Calling Pattern (Supervisor)
+**Use this for 90% of multi-agent needs.** A supervisor agent calls sub-agents as tools.
+
+```python
+from langchain.tools import tool
+from langchain.agents import create_agent
+
+# Step 1: Create sub-agent
+calendar_agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[],
+    system_prompt=(
+        "You are a calendar specialist. "
+        "IMPORTANT: Include ALL details in your final response. "
+        "The supervisor only sees your final message."
+    ),
+    name="calendar_agent"
+)
+
+# Step 2: Wrap sub-agent as tool
+@tool
+def schedule_event(request: str) -> str:
+    """Schedule calendar events. Use for meetings, appointments."""
+    result = calendar_agent.invoke({
+        "messages": [{"role": "user", "content": request}]
+    })
+    return result["messages"][-1].content
+
+# Step 3: Create supervisor with sub-agent tools
+supervisor = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[schedule_event],
+    system_prompt="You coordinate calendar tasks using sub-agents.",
+    name="supervisor"
+)
+```
+
+**Key Points:**
+- **Centralized control** - All routing through supervisor
+- **Sub-agents don't talk to users** - They return results to supervisor
+- **Tool descriptions matter** - Supervisor uses them to decide when to call sub-agents
+- **Emphasize final output in sub-agent prompts** - Common failure: sub-agents do work but don't include results in final message
+
+**When to use:**
+- Multiple distinct domains (calendar, email, research, database)
+- Want centralized workflow control
+- Sub-agents perform tasks and return results
+
+#### 2. Handoffs Pattern
+Agents transfer control to each other. The active agent changes.
+
+**When to use:**
+- Agents need to converse directly with users
+- Complex multi-domain conversations
+- Agent-to-agent handoff based on conversation flow
+
+**For most cases, use Tool Calling pattern (supervisor) instead.**
+
+#### Context Engineering (Critical)
+**The quality of multi-agent systems depends heavily on context engineering** - controlling what each agent sees.
+
+**Documentation:** https://docs.langchain.com/oss/python/langchain/context-engineering
+
+**Control input to sub-agents:**
+```python
+from langchain.tools import ToolRuntime
+from langchain.agents import AgentState
+
+@tool
+def calendar_tool(request: str, runtime: ToolRuntime[None, AgentState]) -> str:
+    """Handle calendar tasks with conversation context."""
+    # Pass conversation history to sub-agent
+    messages = runtime.state.get("messages", [])
+    context = f"Request: {request}\n\nContext: {messages}"
+    
+    result = calendar_agent.invoke({
+        "messages": [{"role": "user", "content": context}]
+    })
+    return result["messages"][-1].content
+```
+
+**Control output from sub-agents:**
+```python
+from typing import Annotated
+from langchain.tools import InjectedToolCallId
+from langgraph.types import Command
+from langchain_core.messages import ToolMessage
+
+@tool
+def calendar_tool(
+    request: str,
+    tool_call_id: Annotated[str, InjectedToolCallId]
+) -> Command:
+    """Handle calendar tasks with custom state return."""
+    result = calendar_agent.invoke({
+        "messages": [{"role": "user", "content": request}]
+    })
+    # Return custom state with result
+    return Command(update={
+        "messages": [
+            ToolMessage(
+                content=result["messages"][-1].content,
+                tool_call_id=tool_call_id
+            )
+        ]
+    })
+```
+
+#### Multi-Agent Best Practices
+
+**DO:**
+- Start with tool calling pattern (supervisor)
+- Give each sub-agent clear domain boundaries
+- Write specific tool descriptions for supervisor routing
+- Emphasize final output in sub-agent system prompts
+- Test sub-agents independently before integration
+- Use `ToolRuntime` to pass conversation context when needed
+
+**DON'T:**
+- Use manual LangGraph for basic multi-agent (use supervisor pattern)
+- Overlap sub-agent responsibilities
+- Forget to remind sub-agents that supervisor only sees final output
+- Skip testing individual sub-agents
+
+**Common Failure Mode:**
+Sub-agents perform tool calls or reasoning but don't include results in final message. Fix:
+```python
+system_prompt=(
+    "You are a specialist. "
+    "CRITICAL: The supervisor only sees your final message. "
+    "Include ALL results, findings, and details in your final response."
+)
+```
+
+## Context Engineering for Reliable Agents
+
+**Documentation:** https://docs.langchain.com/oss/python/langchain/context-engineering
+
+The #1 reason agents fail is not getting the right context. Context engineering is providing the right information and tools in the right format so the LLM can accomplish tasks reliably.
+
+### The Three Types of Context
+
+| Context Type | Nature | What You Control |
+|-------------|--------|------------------|
+| **Model Context** | Transient | Instructions, messages, tools, model choice, response format |
+| **Tool Context** | Persistent | What tools read/write (state, store, runtime) |
+| **Life-cycle Context** | Persistent | What happens between steps (summarization, guardrails, logging) |
+
+### Data Sources Agents Access
+
+| Data Source | Scope | Examples |
+|------------|-------|----------|
+| **State** | Current conversation | Messages, session data, temp flags |
+| **Store** | Cross-conversation | User preferences, memories, history |
+| **Runtime Context** | Static config | API keys, user ID, permissions |
+
+### Model Context (Transient Changes)
+
+**Use middleware to modify what goes into each model call:**
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import dynamic_prompt, wrap_model_call, ModelRequest, ModelResponse
+from typing import Callable
+
+# Dynamic system prompt based on state
+@dynamic_prompt
+def adaptive_prompt(request: ModelRequest) -> str:
+    message_count = len(request.messages)
+    base = "You are a helpful assistant."
+    if message_count > 10:
+        base += "\nBe extra concise."
+    return base
+
+# Inject context from state
+@wrap_model_call
+def inject_context(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse]
+) -> ModelResponse:
+    # Read from state
+    user_tier = request.state.get("user_tier", "free")
+    
+    # Add context message
+    messages = [
+        *request.messages,
+        {"role": "system", "content": f"User tier: {user_tier}"}
+    ]
+    request = request.override(messages=messages)
+    return handler(request)
+
+# Dynamic tool selection
+@wrap_model_call
+def permission_tools(
+    request: ModelRequest,
+    handler: Callable[[ModelRequest], ModelResponse]
+) -> ModelResponse:
+    is_premium = request.state.get("is_premium", False)
+    tools = premium_tools if is_premium else basic_tools
+    request = request.override(tools=tools)
+    return handler(request)
+
+agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[...],
+    middleware=[adaptive_prompt, inject_context, permission_tools],
+    name="context_aware_agent"
+)
+```
+
+**Key Patterns:**
+- `@dynamic_prompt` - Simple way to change system instructions
+- `@wrap_model_call` - Intercept and modify model requests
+- `request.override()` - Change parameters (messages, tools, model, response_format)
+- Changes are **transient** - don't persist to state
+
+### Tool Context (Persistent Changes)
+
+**Tools read from and write to state/store:**
+
+```python
+from langchain.tools import tool, ToolRuntime
+from langgraph.types import Command
+
+# Reading from state, store, runtime
+@tool
+def check_permissions(runtime: ToolRuntime) -> str:
+    """Check user permissions."""
+    # Read from State (current session)
+    authenticated = runtime.state.get("authenticated", False)
+    
+    # Read from Store (long-term memory)
+    user_id = runtime.config.get("user_id")
+    user_prefs = runtime.store.get(
+        namespace=["users", user_id],
+        key="preferences"
+    )
+    
+    # Read from Runtime Context (static config)
+    api_key = runtime.config.get("api_key")
+    
+    return f"Auth: {authenticated}, Prefs: {user_prefs}"
+
+# Writing to state
+@tool
+def update_session(status: str, runtime: ToolRuntime) -> Command:
+    """Update session state."""
+    return Command(
+        update={"session_status": status},
+        result=f"Updated status to {status}"
+    )
+
+# Writing to store
+@tool
+def save_preference(key: str, value: str, runtime: ToolRuntime) -> Command:
+    """Save user preference for future conversations."""
+    user_id = runtime.config.get("user_id", "default")
+    
+    # Read existing
+    existing = runtime.store.get(
+        namespace=["users", user_id],
+        key="preferences"
+    ) or {}
+    
+    # Update
+    existing[key] = value
+    
+    # Write to Store (persistent)
+    runtime.store.put(
+        namespace=["users", user_id],
+        key="preferences",
+        value=existing
+    )
+    
+    return Command(result=f"Saved {key}={value}")
+```
+
+**Key Patterns:**
+- `runtime.state` - Read session data
+- `runtime.store` - Read/write long-term memory
+- `runtime.config` - Read static configuration
+- `Command(update={...})` - Persistently update state
+- Tool writes are **persistent** - changes saved permanently
+
+### Life-cycle Context (Persistent Changes)
+
+**Control what happens between steps:**
+
+```python
+from langchain.agents import create_agent
+from langchain.agents.middleware import (
+    before_model, after_model, after_tools,
+    SummarizationMiddleware
+)
+from langgraph.errors import GraphInterrupt
+
+# Built-in summarization (most common)
+agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[...],
+    middleware=[
+        SummarizationMiddleware(
+            model="openai:gpt-4o-mini",
+            max_tokens_before_summary=4000,
+            messages_to_keep=20
+        )
+    ],
+    name="summarizing_agent"
+)
+
+# Custom guardrails
+@before_model
+def content_moderation(state: dict) -> dict:
+    """Block inappropriate content before model call."""
+    messages = state.get("messages", [])
+    if messages:
+        content = messages[-1].get("content", "").lower()
+        banned_words = ["spam", "scam"]
+        
+        if any(word in content for word in banned_words):
+            state["messages"].append({
+                "role": "assistant",
+                "content": "I cannot respond to that request."
+            })
+            raise GraphInterrupt("Content violation", state=state)
+    return state
+
+# Logging and metrics
+@after_model
+def log_model_calls(state: dict) -> dict:
+    """Log all model responses."""
+    messages = state.get("messages", [])
+    if messages and messages[-1].get("role") == "assistant":
+        print(f"[LOG] Response: {messages[-1].get('content')}")
+    return state
+
+# Tool result validation
+@after_tools
+def validate_tool_results(state: dict) -> dict:
+    """Check tool results for errors."""
+    messages = state.get("messages", [])
+    if messages and messages[-1].get("type") == "tool":
+        content = messages[-1].get("content", "")
+        if "ERROR" in content:
+            messages.append({
+                "role": "system",
+                "content": "Tool error occurred. Inform user."
+            })
+    return state
+
+agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[...],
+    middleware=[
+        content_moderation,
+        log_model_calls,
+        validate_tool_results
+    ],
+    name="lifecycle_aware_agent"
+)
+```
+
+**Available Hooks:**
+- `@before_model` - Before LLM call (validation, moderation, trimming)
+- `@after_model` - After LLM responds (logging, formatting, metrics)
+- `@before_tools` - Before tool execution (authorization, validation)
+- `@after_tools` - After tools complete (error handling, validation)
+
+**Key Patterns:**
+- Hooks modify state **persistently**
+- Use `GraphInterrupt` to stop processing
+- Combine multiple hooks for comprehensive control
+- Built-in middleware for common patterns (SummarizationMiddleware)
+
+### Context Engineering Best Practices
+
+**DO:**
+- Start with simple static context, add dynamics only when needed
+- Use `@dynamic_prompt` for simple prompt changes
+- Use `@wrap_model_call` for complex model context changes
+- Use `ToolRuntime` to access state/store/config in tools
+- Use `Command` to persistently update state from tools
+- Use life-cycle hooks for cross-cutting concerns
+- Test incrementally - add one context feature at a time
+
+**DON'T:**
+- Confuse transient (model context) with persistent (tool/lifecycle context)
+- Forget to return results from tools using `Command(result=...)`
+- Skip defaults when reading from state: `state.get("key", default)`
+- Overcomplicate - use built-in middleware when available
+
+### Context Engineering Checklist
+
+When building agents, consider:
+
+- [ ] **Model Context**: Does the prompt need conversation-specific instructions?
+- [ ] **Model Context**: Should I inject additional context (files, preferences)?
+- [ ] **Model Context**: Do different users need different tools?
+- [ ] **Model Context**: Should I route to different models based on complexity?
+- [ ] **Model Context**: Do I need structured output (response_format)?
+- [ ] **Tool Context**: Do tools need session data (state)?
+- [ ] **Tool Context**: Do tools need historical data (store)?
+- [ ] **Tool Context**: Do tools need config/permissions (runtime)?
+- [ ] **Tool Context**: Are tools updating state properly with Command?
+- [ ] **Life-cycle Context**: Do I need message summarization?
+- [ ] **Life-cycle Context**: Do I need content moderation or guardrails?
+- [ ] **Life-cycle Context**: Do I need logging or metrics?
+- [ ] **Life-cycle Context**: Do I need tool result validation?
+
+## Common Patterns and Quick Reference
+
+### Basic RAG Tool (for agents)
+```python
+from langchain.tools import tool
+from langchain_community.vectorstores import Chroma
+from langchain_openai import OpenAIEmbeddings
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+vectorstore = Chroma(persist_directory="./chroma_db", embedding_function=embeddings)
+
+@tool
+def search_documents(query: str) -> str:
+    """Search the knowledge base for relevant information."""
+    docs = vectorstore.similarity_search(query, k=3)
+    return "\n\n".join(doc.page_content for doc in docs)
+```
+
+### Agent with Memory
+```python
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[search_documents],
+    checkpointer=InMemorySaver(),  # Enables conversation memory
+    name="rag_agent"
+)
+
+# Use with thread_id for conversation continuity
+config = {"configurable": {"thread_id": "conversation_1"}}
+result = agent.invoke({"messages": [{"role": "user", "content": "Hello"}]}, config)
+```
+
+### Tool with State Access
+```python
+from langchain.tools import tool, ToolRuntime
+from langgraph.types import Command
+
+@tool
+def save_preference(key: str, value: str, runtime: ToolRuntime) -> Command:
+    """Save a user preference."""
+    # Read from state
+    prefs = runtime.state.get("preferences", {})
+    # Update
+    prefs[key] = value
+    # Write back to state
+    return Command(
+        update={"preferences": prefs},
+        result=f"Saved {key}={value}"
+    )
+```
+
+### Simple Middleware Example
+```python
+from langchain.agents.middleware import dynamic_prompt, ModelRequest
+
+@dynamic_prompt
+def context_aware_prompt(request: ModelRequest) -> str:
+    """Adjust prompt based on conversation length."""
+    msg_count = len(request.messages)
+    base = "You are a helpful assistant."
+    if msg_count > 10:
+        base += " Be concise in your responses."
+    return base
+```
+
+### Complete RAG System (Document Loading → Retrieval → Agent)
+```python
+# Step 1: Load and split documents
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+loader = PyPDFLoader("./document.pdf")
+documents = loader.load()
+
+text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=200)
+chunks = text_splitter.split_documents(documents)
+
+# Step 2: Create vector store
+from langchain_openai import OpenAIEmbeddings
+from langchain_community.vectorstores import Chroma
+
+embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
+vectorstore = Chroma.from_documents(
+    documents=chunks,
+    embedding=embeddings,
+    persist_directory="./chroma_db"
+)
+
+# Step 3: Create search tool
+from langchain.tools import tool
+
+@tool
+def search_documents(query: str) -> str:
+    """Search the knowledge base for relevant information."""
+    docs = vectorstore.similarity_search(query, k=3)
+    return "\n\n".join(doc.page_content for doc in docs)
+
+# Step 4: Create RAG agent
+from langchain.agents import create_agent
+from langgraph.checkpoint.memory import InMemorySaver
+
+agent = create_agent(
+    model="openai:gpt-4o-mini",
+    tools=[search_documents],
+    checkpointer=InMemorySaver(),
+    system_prompt="Use search_documents to answer questions about the document.",
+    name="rag_agent"
+)
+
+# Step 5: Use the agent
+config = {"configurable": {"thread_id": "user_123"}}
+result = agent.invoke(
+    {"messages": [{"role": "user", "content": "What is this document about?"}]},
+    config
+)
+```
+
+## Code Review Checklist
+
+Before committing LangChain/LangGraph code, verify:
+
+- [ ] Latest v1.0 documentation was consulted (web search performed)
+- [ ] No deprecated v0.x patterns are used (especially LCEL)
+- [ ] **Used simplest approach first** (helper functions before manual graphs)
+- [ ] **All agents have descriptive names** (using the `name` parameter)
+- [ ] No LCEL pipe operators (`|`) or legacy chain patterns
+- [ ] Proper async/await patterns implemented if needed
+- [ ] Error handling includes LangChain-specific exceptions
+- [ ] Type hints are used throughout
+- [ ] Pydantic models used for structured I/O
+- [ ] Documentation comments reference specific v1.0 docs
+- [ ] Environment variables properly configured (API keys, etc.)
+- [ ] Rate limiting and cost management considered
+- [ ] LangSmith tracing enabled for development (`LANGSMITH_TRACING=true`)
+
+**For RAG Applications:**
+- [ ] Using appropriate retrieval strategy (similarity search, MMR, score threshold)
+- [ ] Chunk size is reasonable (800-1200 characters typical)
+- [ ] Chunk overlap configured (200 characters typical)
+- [ ] Retrieving appropriate number of documents (k=3-5 typical)
+- [ ] Vector store persisted properly (e.g., ChromaDB with `persist_directory`)
+- [ ] Same embedding model used for indexing and retrieval
+- [ ] Chose appropriate RAG pattern (2-Step vs Agentic)
+
+**For Multi-Agent Systems:**
+- [ ] Used supervisor pattern (tool calling) instead of manual LangGraph for basic cases
+- [ ] Each sub-agent has clear domain boundaries (no overlap)
+- [ ] Tool descriptions are specific and guide supervisor routing decisions
+- [ ] Sub-agent system prompts emphasize including results in final output
+- [ ] Sub-agents tested independently before integration
+- [ ] Context engineering considered (what each agent needs to see)
+
+**For Context Engineering:**
+- [ ] Distinguished between transient (model) and persistent (tool/lifecycle) context
+- [ ] Used appropriate data sources (state vs store vs runtime)
+- [ ] Applied middleware correctly (`@dynamic_prompt`, `@wrap_model_call`, lifecycle hooks)
+- [ ] Tools use `Command` to update state properly
+- [ ] Tools provide defaults when reading from state/store
+- [ ] Life-cycle hooks are used for cross-cutting concerns
+- [ ] Used built-in middleware (SummarizationMiddleware) when applicable
+
+## Common Pitfalls and Troubleshooting
+
+### Agent Not Using Tools
+**Problem:** Agent answers directly without calling tools  
+**Solution:**
+- Make system prompt more explicit: "You MUST use [tool_name] for..."
+- Improve tool descriptions - be specific about when to use
+- Test tool independently first
+
+### RAG Returns Irrelevant Results
+**Problem:** Retrieved documents don't match query  
+**Solution:**
+- Use more specific queries
+- Check similarity scores (should be < 1.0 for good matches)
+- Try MMR for diverse results: `search_type="mmr"`
+- Adjust chunk size or overlap
+- Verify correct embedding model used
+
+### Multi-Agent Sub-agents Don't Return Results
+**Problem:** Sub-agents execute but supervisor gets empty responses  
+**Solution:**
+- Add to sub-agent prompt: "CRITICAL: Include ALL results in your final message"
+- Remind sub-agents that supervisor only sees final output
+- Test sub-agents independently
+
+### Memory Not Working
+**Problem:** Agent doesn't remember conversation  
+**Solution:**
+- Verify checkpointer is configured: `checkpointer=InMemorySaver()`
+- Ensure same `thread_id` used across invocations
+- Pass config properly: `config={"configurable": {"thread_id": "..."}}`
+
+### Context Window Exceeded
+**Problem:** Conversation too long for model  
+**Solution:**
+- Use `SummarizationMiddleware` to condense old messages
+- Implement message trimming with `@before_model` hook
+- Keep only recent N messages
+
+### Vector Store Not Found
+**Problem:** Can't load existing ChromaDB  
+**Solution:**
+- Verify `persist_directory` path is correct
+- Use SAME embedding model as when creating store
+- Check if database files exist in directory
+
+## Common Migration Issues (v0.x → v1.0)
+
+Watch out for these breaking changes:
+
+1. **LCEL Removal (CRITICAL):**
+   - **DEPRECATED**: All LCEL patterns including pipe operator (`|`)
+   - **DEPRECATED**: `prompt | llm | output_parser`
+   - **CORRECT**: Use helper functions OR LangGraph for custom workflows
+
+2. **Chain Construction:**
+   - **DEPRECATED**: `LLMChain(llm=llm, prompt=prompt)`
+   - **DEPRECATED**: Any LCEL chain patterns
+   - **CORRECT**: For simple cases, use direct model invocation
+   - **CORRECT**: For complex workflows, use LangGraph StateGraph
+
+3. **Agent Creation:**
+   - **DEPRECATED**: `initialize_agent(...)` (removed in v1.0)
+   - **DEPRECATED**: `create_react_agent(...)` (removed in v1.0)
+   - **DEPRECATED**: Any reference to "ReAct" agents (terminology no longer used)
+   - **WRONG**: Manual LangGraph StateGraph for simple agents
+   - **CORRECT**: `create_agent()` from `langchain.agents` (current v1.0 standard)
+   - **ADVANCED**: Manual LangGraph StateGraph ONLY for complex custom workflows
+   
+   **Example (simple agent - use this 90% of the time):**
+   ```python
+   from langchain.agents import create_agent
+   
+   agent = create_agent(
+       model="openai:gpt-4o-mini",
+       tools=[my_tool],
+       system_prompt="You are helpful.",
+       name="my_agent"  # Always provide a descriptive name
+   )
+   ```
+
+4. **Context Engineering:**
+   - **DEPRECATED**: Manual message manipulation without middleware
+   - **DEPRECATED**: Direct state modification outside proper hooks
+   - **CORRECT**: Use middleware for model context changes
+   - **CORRECT**: Use `Command` for tool state updates
+   - **CORRECT**: Use life-cycle hooks for persistent changes
+
+5. **Memory:**
+   - **DEPRECATED**: `ConversationBufferMemory`
+   - **DEPRECATED**: `RunnableWithMessageHistory`
+   - **CORRECT**: State (short-term) and Store (long-term) via tools/middleware
+   - **CORRECT**: Access via `runtime.state` and `runtime.store` in tools
+
+6. **Output Parsing:**
+   - **DEPRECATED**: Custom string parsing
+   - **CORRECT**: Structured output with `response_format` parameter and Pydantic
+   - **CORRECT**: Dynamic format selection via middleware
+
+7. **Callbacks:**
+   - **DEPRECATED**: Direct callback handlers
+   - **CORRECT**: Life-cycle hooks (`@before_model`, `@after_model`, etc.)
+   - **CORRECT**: LangGraph persistence and checkpoint system
+
+## Testing Requirements
+
+All LangChain/LangGraph code must include:
+
+- Unit tests with mocked LLM responses
+- Integration tests with actual API calls (in separate test suite)
+- Error handling tests (rate limits, API failures, malformed responses)
+- Token usage and cost estimation validation
+
+## Documentation Requirements
+
+Each LangChain/LangGraph module must have:
+
+```python
+"""
+Module: [module_name]
+Purpose: [brief description]
+
+LangChain Version: v1.0+
+Documentation Reference: [URL]
+Last Updated: [DATE]
+
+Key Components:
+- [Component 1]: [description]
+- [Component 2]: [description]
+
+Dependencies:
+- langchain>=1.0.0
+- langchain-community>=1.0.0
+- [other specific packages]
+"""
+```
+
+## AI Assistant Instructions
+
+**You are committed to delivering the best possible LangChain v1.0 code.** The user trusts you to use current patterns.
+
+### Mandatory Workflow:
+
+1. **SEARCH FIRST (REQUIRED):**
+   - **ALWAYS** use `@Web` and `@https://docs.langchain.com/oss/python/langchain` to search for current documentation
+   - Query: `"LangChain v1.0 [feature] site:docs.langchain.com"`
+   - **DO NOT** skip this step, even if you think you know the API
+   - **VERIFY** your assumptions against live documentation
+
+2. **START SIMPLE:**
+   - Check if there's a built-in helper function first
+   - For agents: Use `create_agent()` - don't manually build LangGraph
+   - For models: Use `init_chat_model()` - don't manually instantiate
+   - For standard patterns: Use helper functions - don't reinvent wheels
+   
+3. **CHALLENGE YOURSELF:**
+   - If your solution feels complex, search for a simpler approach
+   - If you're writing >20 lines for a basic agent, you're probably overcomplicating it
+   - If you're tempted to use LangGraph StateGraph for a simple agent, **STOP** and use `create_agent()`
+
+4. **ONLY GO COMPLEX WHEN:**
+   - User explicitly requests custom workflow logic
+   - Building multi-agent systems with complex custom routing (try supervisor pattern first)
+   - Need features genuinely not available in helper functions
+   - Implementing advanced patterns (human-in-the-loop, custom routing)
+
+5. **EXPLAIN YOUR RESEARCH:**
+   - Share what you learned from the documentation
+   - Cite specific documentation URLs
+   - Explain why you chose this approach over alternatives
+
+6. **FLAG CONCERNS:**
+   - If documentation is unclear or conflicting, mention it
+   - If you're uncertain, admit it and suggest verification
+   - If breaking changes might affect existing code, warn the user
+
+7. **KISS PRINCIPLE (Keep It Simple, Stupid):**
+   - Prefer readability over cleverness
+   - Prefer built-in functions over manual construction
+   - Avoid unnecessary wrapper functions or abstractions
+   - Only add complexity when there's a clear, documented benefit
+   - Linear, top-to-bottom code flow is better than nested functions
+
+8. **QUALITY ASSURANCE:**
+   - Include helpful comments explaining what each section does
+   - Add type hints for clarity
+   - Handle errors gracefully
+   - Test with realistic examples
+
+## Resources
+
+All v1.0 documentation is hosted at docs.langchain.com:
+
+### Core Documentation
+- **Primary Docs**: https://docs.langchain.com/
+- **LangChain (Python)**: https://docs.langchain.com/oss/python/langchain
+- **LangGraph (Python)**: https://docs.langchain.com/oss/python/langgraph
+- **Migration to v1.0**: https://docs.langchain.com/oss/python/migrate/langgraph-v1
+
+### Key Concepts
+- **Agents**: https://docs.langchain.com/oss/python/langchain/agents
+- **Models**: https://docs.langchain.com/oss/python/langchain/models
+- **Messages**: https://docs.langchain.com/oss/python/langchain/messages
+- **Tools**: https://docs.langchain.com/oss/python/langchain/tools
+- **Short-term Memory**: https://docs.langchain.com/oss/python/langchain/short-term-memory
+
+### Context Engineering
+- **Context Engineering Overview**: https://docs.langchain.com/oss/python/langchain/context-engineering
+- **Middleware**: https://docs.langchain.com/oss/python/langchain/middleware
+
+### RAG (Retrieval-Augmented Generation)
+- **Knowledge Base**: https://docs.langchain.com/oss/python/langchain/knowledge-base
+- **Retrieval**: https://docs.langchain.com/oss/python/langchain/retrieval
+- **Document Loaders**: https://docs.langchain.com/oss/python/langchain/document-loaders
+- **Text Splitters**: https://docs.langchain.com/oss/python/langchain/text-splitters
+
+### Multi-Agent Systems
+- **Multi-Agent Systems**: https://docs.langchain.com/oss/python/langchain/multi-agent
+- **Supervisor Tutorial**: https://docs.langchain.com/oss/python/langchain/supervisor
+
+### Tools & Platforms
+- **LangSmith Platform**: https://docs.langchain.com/langsmith
+- **LangSmith Dashboard**: https://smith.langchain.com/
+- **MCP Server** (Programmatic Access): https://docs.langchain.com/mcp
+- **GitHub**: https://github.com/langchain-ai/langchain
+
+## Trust & Quality Commitment
+
+**The user can trust that you will:**
+- Always search for current documentation before coding
+- Use the simplest approach that solves the problem
+- Deliver v1.0-compliant code, not deprecated patterns
+- Explain your approach and cite documentation sources
+- Flag any uncertainties or potential issues
+- Write clean, maintainable, well-commented code
+- Follow KISS principles - no unnecessary complexity
+
+**You will NOT:**
+- Use deprecated APIs (LCEL, create_react_agent, etc.)
+- Overcomplicate simple problems
+- Guess at APIs - always verify with web search
+- Write manual LangGraph for basic agents
+- Create unnecessary wrapper functions or abstractions
+
+## Version Tracking
+
+This rule was created for LangChain v1.0+ (October 2024 onwards)  
+Last updated: October 23, 2025  
+**Rule validated against live documentation: YES**
+
+**Recent Updates:**
+- Added comprehensive context engineering section (Model, Tool, Life-cycle Context)
+- Added data sources guide (State, Store, Runtime Context)
+- Added middleware patterns for model context
+- Added tool patterns for persistent state management
+- Added life-cycle hooks for cross-cutting concerns
+- Enhanced code review checklist with context engineering items
+- Added context engineering best practices and checklist
+- Expanded migration guide with context engineering patterns
