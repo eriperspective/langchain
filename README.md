@@ -1,4 +1,4 @@
-# LangChain Learning Repository
+# LangChain Tutorial Repository
 
 A comprehensive, hands-on tutorial series for learning LangChain v1.0 and LangGraph from the ground up. This repository contains 12 complete, working examples that progress from basic concepts to advanced multi-agent systems.
 
