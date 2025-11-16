@@ -144,4 +144,4 @@ This project is provided for educational purposes.
 
 ## Author
 
-Created as a comprehensive learning resource for developers entering the LangChain ecosystem.
+Created by Eri Perspective while building production AI systems. These patterns and best practices are extracted from real-world projects including SmartFinance AI, a multi-agent financial assistant with LangGraph orchestration. Built to share knowledge with the AI developer community.
