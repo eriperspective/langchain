@@ -1,6 +1,6 @@
 # LangChain Tutorial Repository
 
-A comprehensive, hands-on tutorial series for learning LangChain v1.0 and LangGraph from the ground up. This repository contains 12 complete, working examples that progress from basic concepts to advanced multi-agent systems.
+A comprehensive, hands-on tutorial series for learning LangChain v1.0 and LangGraph from the ground up. This repository contains 42 complete, working examples that progress from basic concepts to advanced multi-agent systems.
 
 ## About This Repository
 
@@ -34,6 +34,26 @@ This project provides practical, executable code examples for developers learnin
 
 ### Advanced Systems (Tutorial 11)
 - **11-multi-agent**: Supervisor pattern with specialized sub-agents
+
+### Advanced Topics (Tutorials 12-41)
+
+**Prompts & Templates (12-15)**
+- Prompt templates, chat prompts, output parsers, and structured outputs
+
+**Tools & Error Handling (16-19)**
+- Simple and multiple tools, tool error handling, and agent routing
+
+**Memory & State Management (20-26)**
+- Agent memory, conversation buffers, summary memory, custom state schemas, checkpointing, and session-based memory
+
+**RAG & Embeddings (27-31)**
+- Text splitting, embeddings, vector search, retrieval metadata, and RAG with citations
+
+**Advanced Agent Patterns (32-36)**
+- Decision loops, reflection agents, planner agents, tool-using agents, and human-in-the-loop workflows
+
+**Production & Evaluation (37-41)**
+- Logging, tracing, configuration management, cost awareness, evaluation, and a comprehensive capstone project
 
 ## Prerequisites
 
@@ -100,6 +120,7 @@ langchain/
 ├── 9-two-step-rag/        # Basic RAG implementation
 ├── 10-agentic-rag/        # Advanced RAG with autonomy
 ├── 11-multi-agent/        # Multi-agent coordination
+├── 12-41/                 # Advanced topics (see "What You'll Learn" above)
 └── README.md
 ```
 
